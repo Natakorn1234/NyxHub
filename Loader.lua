@@ -4,7 +4,7 @@ print("UniverseId:", universeId)
 
 local games = {
 
-    [1202096104] = "https://raw.githubusercontent.com/YOURNAME/hub/main/games/drivingEmpire.lua"
+    [1202096104] = "https://raw.githubusercontent.com/Natakorn1234/NyxHub/refs/heads/main/games/drivingEmpire.lua"
 
 }
 
