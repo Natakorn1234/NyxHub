@@ -5,7 +5,7 @@ print("PlaceId:", placeId)
 local places = {
 
     -- Lobby
-    [3351674303] = "https://raw.githubusercontent.com/YOURNAME/hub/main/scripts/atmFarm.lua"
+    [3351674303] = "https://raw.githubusercontent.com/Natakorn1234/NyxHub/refs/heads/main/scripts/Auto%20ATM.lua"
 
 }
 
