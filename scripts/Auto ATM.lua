@@ -20,7 +20,10 @@ end)
 
 local spawner = workspace.Game.Jobs.CriminalATMSpawners
 
--- safe spot
+-- CONFIG
+local detectDistance = 35
+local lastEscape = 0
+
 local waitCFrame = CFrame.new(
 -885.639526,243.493607,-1564.73035,
 0.944067478,0.232263952,-0.23407279,
@@ -28,48 +31,53 @@ local waitCFrame = CFrame.new(
 0.329752356,-0.664962173,0.670140803
 )
 
+local safeSpots = {
+    CFrame.new(-594,378,-918),
+    CFrame.new(-564,415,639),
+    CFrame.new(-1038,1014,3287),
+    CFrame.new(-2174,1437,3818),
+    CFrame.new(-1549,579,4837),
+    CFrame.new(193,926,3577)
+}
+
 local atSafeSpot = false
-
--- noclip
-RunService.Stepped:Connect(function()
-    if _G.AutoFarm then
-        for _,v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") then
-                v.CanCollide = false
-            end
-        end
-    end
-end)
-
-RunService.RenderStepped:Connect(function()
-    if _G.AutoFarm and targetATM then
-        local camPos = targetATM.CFrame * CFrame.new(0,3,-6)
-
-        camera.CFrame = CFrame.lookAt(
-            camPos.Position,
-            targetATM.Position
-        )
-    end
-end)
-
--------------------------------------------------
--- ATM CACHE SYSTEM (เร็วกว่า GetDescendants)
--------------------------------------------------
-
-local atmList = {}
 local targetATM = nil
 local skipATM = {}
+local atmList = {}
+
+-------------------------------------------------
+-- 🔥 FREEZE (ลอย + ล็อกตัว)
+-------------------------------------------------
+
+local function freeze(state)
+    if state then
+        hrp.Anchored = true
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    else
+        hrp.Anchored = false
+    end
+end
+
+-------------------------------------------------
+-- CAMERA
+-------------------------------------------------
+
+RunService.RenderStepped:Connect(function()
+    if _G.AutoFarm and targetATM and not atSafeSpot and not hrp.Anchored then
+        local camPos = targetATM.CFrame * CFrame.new(0,3,-6)
+        camera.CFrame = CFrame.lookAt(camPos.Position, targetATM.Position)
+    end
+end)
+
+-------------------------------------------------
+-- ATM CACHE
+-------------------------------------------------
 
 local function addATM(model)
-
-    local pos = model:FindFirstChild("Position")
-
-    if not pos then
-        pos = model:FindFirstChild("Position", true)
-    end
-
+    local pos = model:FindFirstChild("Position") or model:FindFirstChild("Position", true)
     if pos then
-        table.insert(atmList,pos)
+        table.insert(atmList, pos)
     end
 end
 
@@ -87,46 +95,81 @@ spawner.DescendantAdded:Connect(function(v)
 end)
 
 -------------------------------------------------
+-- UTIL
+-------------------------------------------------
+
+local function isDanger()
+    local myPos = hrp.Position
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p ~= plr and p.Team and p.Team.Name == "Security" then
+            local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+            if r and (myPos - r.Position).Magnitude < detectDistance then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function escape()
+    freeze(true)
+    hrp.CFrame = safeSpots[math.random(#safeSpots)] + Vector3.new(
+        math.random(-20,20),
+        math.random(20,50),
+        math.random(-20,20)
+    )
+    camera.CameraType = Enum.CameraType.Custom
+    task.wait(1) -- ลอยค้างกันโดนจับ
+end
 
 local function getATM()
-
     for i = #atmList,1,-1 do
-        local pos = atmList[i]
-
-        if not pos or not pos.Parent then
+        if not atmList[i] or not atmList[i].Parent then
             table.remove(atmList, i)
-        end 
+        end
     end
 
-    local closest = nil
-    local closestDist = math.huge
+    local closest, dist = nil, math.huge
 
     for _,pos in ipairs(atmList) do
-
-        if pos.Parent then
-
-            local atm = pos.Parent:FindFirstChild("ATM")
-
-            if atm and not atm:FindFirstChild("BrokenSurfaceAppearance") and not skipATM[pos] then
-
-                local dist = (hrp.Position - pos.Position).Magnitude
-
-                if dist < closestDist then
-                    closestDist = dist
-                    closest = pos
-                end
-
+        local atm = pos.Parent and pos.Parent:FindFirstChild("ATM")
+        if atm and not atm:FindFirstChild("BrokenSurfaceAppearance") and not skipATM[pos] then
+            local m = (hrp.Position - pos.Position).Magnitude
+            if m < dist then
+                dist = m
+                closest = pos
             end
-
         end
-
     end
 
     return closest
-
 end
 
 -------------------------------------------------
+-- MAIN
+-------------------------------------------------
+
+local escaping = false
+
+RunService.Heartbeat:Connect(function()
+    if not _G.AutoFarm or escaping then return end
+
+    if isDanger() then
+        escaping = true
+        lastEscape = tick()
+
+        -- 🔥 ยกเลิกทุกอย่างทันที
+        targetATM = nil
+        freeze(true)
+
+        hrp.CFrame = safeSpots[math.random(#safeSpots)] + Vector3.new(0, 10, 0)
+        camera.CameraType = Enum.CameraType.Custom
+
+        task.wait(0.5) -- ลอยกันจับ
+
+        escaping = false
+    end
+end)
 
 while _G.AutoFarm do
 
@@ -134,80 +177,86 @@ while _G.AutoFarm do
 
     if posPart then
 
+        freeze(false) -- 🔥 ปลดล็อกก่อนทำงาน
+
         atSafeSpot = false
+        targetATM = posPart
 
         local atmModel = posPart.Parent
-        targetATM = posPart
-        
-        local standCFrame = posPart.CFrame * CFrame.new(0,2,-2)
 
-        hrp.CFrame = standCFrame
+        hrp.CFrame = posPart.CFrame * CFrame.new(0,2,-2)
         hrp.CFrame = CFrame.lookAt(hrp.Position, posPart.Position)
-
-        local camPos = posPart.CFrame * CFrame.new(0,3,-6)
-
-        camera.CFrame = CFrame.lookAt(
-            camPos.Position,
-            posPart.Position
-        )
 
         task.wait(0.25)
 
-        -- refresh proximity
         hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, -0.1)
 
-        local prompt = atmModel:FindFirstChildWhichIsA("ProximityPrompt",true)
+        local prompt = atmModel:FindFirstChildWhichIsA("ProximityPrompt", true)
 
-if prompt then
+        if prompt then
+            local success = false
 
-    local success = false
+            for i = 1,3 do
 
-    for i = 1,3 do -- retry สูงสุด 3 ครั้ง
+                if not prompt.Enabled then
+                    task.wait(0.2)
+                end
 
-        if not prompt.Enabled then
-            task.wait(0.2)
-        end 
-        
-        prompt:InputHoldBegin()
+                prompt:InputHoldBegin()
+                local start = tick()
 
-        local start = tick()
+                while tick() - start < prompt.HoldDuration + 0.25 do
+                    task.wait(0.7)
 
-        while tick() - start < prompt.HoldDuration + 0.25 do
-            task.wait(0.05)
+                    -- 🚨 หนีกลาง hold
+                    if isDanger() and (tick() - start < prompt.HoldDuration - 0.1) then
+                        prompt:InputHoldEnd()
+                        lastEscape = tick()
+                        escape()
+                        break
+                    end
 
-            local atm = atmModel:FindFirstChild("ATM")
-            if atm and atm:FindFirstChild("BrokenSurfaceAppearance") then
-                skipATM[posPart] = nil
-                success = true
-                break
+                    local atm = atmModel:FindFirstChild("ATM")
+                    if atm and atm:FindFirstChild("BrokenSurfaceAppearance") then
+                        skipATM[posPart] = nil
+                        success = true
+                        break
+                    end
+                end
+
+                prompt:InputHoldEnd()
+
+                if success then
+                    task.wait(0.2)
+                    break
+                end
+
+                task.wait(0.4)
+            end
+
+            if not success then
+                skipATM[posPart] = true
             end
         end
 
-        prompt:InputHoldEnd()
-
-        if success then
-            task.wait(0.2)
-            break
-        end
-
-        task.wait(0.4) -- รอก่อน retry
-    end
-
-    if not success then
-        skipATM[posPart] = true
-    end 
-
-end
-
     else
-
         if not atSafeSpot then
-            hrp.CFrame = waitCFrame
+            freeze(true)
+            camera.CameraType = Enum.CameraType.Custom
             atSafeSpot = true
         end
 
-        task.wait(0.5)
+        -- 🔥 ขยับตลอด กันโดนวาร์ปจับ
+        local base = waitCFrame.Position
 
+        local offset = Vector3.new(
+            math.random(-30,30),
+            math.random(20,40), -- ลอยสูง
+            math.random(-30,30)
+        )
+
+        hrp.CFrame = CFrame.new(base + offset)
+
+        task.wait(0.2)
     end
-
 end
